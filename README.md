@@ -3,8 +3,8 @@
 - VirtualBox
 - Vagrant
 
-## Install && Run
-```
+## Install & Run
+```bash
 vagrant up
 ```
 
