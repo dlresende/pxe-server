@@ -2,7 +2,7 @@
 
 [ -z "$DEBUG" ] || set -x
 
-set -eu
+set -u
 
 TFTP_ROOT=/tmp/tftp
 
@@ -24,11 +24,6 @@ sudo apt-get install \
 IP_ADDRESS=$(ifconfig | awk '/inet addr/{print substr($2,6)}' | grep 192.168)
 
 sudo sh -c "cat > /etc/dnsmasq.d/proxydhcp.conf << EOF
-# Listen on this specific port instead of the standard DNS port
-# (53). Setting this to zero completely disables DNS function,
-# leaving only DHCP and/or TFTP.
-port=0
-
 # Set the boot filename for netboot/PXE. You will only need
 # this is you want to boot machines over the network and you will need
 # a TFTP server; either dnsmasq built's in TFTP server or an
@@ -51,3 +46,17 @@ dhcp-range=$IP_ADDRESS,proxy
 EOF"
 
 sudo service dnsmasq restart
+
+cp /vagrant/preseed.cfg "$TFTP_ROOT"
+
+if [ ! -r $TFTP_ROOT/pxelinux.cfg/default.original ]
+then
+  cp $TFTP_ROOT/pxelinux.cfg/default $TFTP_ROOT/pxelinux.cfg/default.original
+fi
+
+sudo sh -c "cat > $TFTP_ROOT/pxelinux.cfg/default << EOF
+default install
+label install
+  kernel ubuntu-installer/amd64/linux
+  append vga=788 initrd=ubuntu-installer/amd64/initrd.gz auto=true priority=critical preseed/url=tftp://$IP_ADDRESS/preseed.cfg
+EOF"
