@@ -1,29 +1,38 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 
 [ -z "$DEBUG" ] || set -x
 
-set -u
+set -eu
 
 TFTP_ROOT=/tmp/tftp
 
-if [ ! -d "$TFTP_ROOT" ]; then
-  wget http://archive.ubuntu.com/ubuntu/dists/xenial-updates/main/installer-amd64/current/images/netboot/ \
-    --directory-prefix="$TFTP_ROOT" \
-    --recursive \
-    --no-parent \
-    --no-host-directories \
-    --cut-dirs=8 \
+download_netboot_image() {
+  local dist=xenial
+  local arch=amd64
+  local netboot_image=/tmp/netboot.tar.gz
+
+  wget http://archive.ubuntu.com/ubuntu/dists/$dist/main/installer-$arch/current/images/netboot/netboot.tar.gz \
+    -O $netboot_image \
     --quiet
-fi
 
-sudo apt-get update
-sudo apt-get install \
-  --assume-yes \
-  dnsmasq \
+  if [ ! -d $TFTP_ROOT ]
+  then
+    mkdir -p $TFTP_ROOT
+  fi
 
-IP_ADDRESS=$(ifconfig | awk '/inet addr/{print substr($2,6)}' | grep 192.168)
+  tar xf $netboot_image -C $TFTP_ROOT
+}
 
-sudo sh -c "cat > /etc/dnsmasq.d/proxydhcp.conf << EOF
+setup_dnsmasq() {
+  sudo apt-get update > /dev/null
+  sudo apt-get install \
+    --assume-yes \
+    dnsmasq \
+
+  local ip_address
+  ip_address=$(ifconfig | awk '/inet addr/{print substr($2,6)}' | grep 192.168)
+
+  sudo sh -c "cat > /etc/dnsmasq.d/proxydhcp.conf << EOF
 # Set the boot filename for netboot/PXE. You will only need
 # this is you want to boot machines over the network and you will need
 # a TFTP server; either dnsmasq built's in TFTP server or an
@@ -42,21 +51,35 @@ tftp-root=$TFTP_ROOT
 # Log lots of extra information about DHCP transactions.
 log-dhcp
 
-dhcp-range=$IP_ADDRESS,proxy
+# This range(s) is for the public interface, where dnsmasq functions
+# as a proxy DHCP server providing boot information but no IP leases.
+# Any ip in the subnet will do, so you may just put your server NIC ip here.
+dhcp-range=$ip_address,proxy
 EOF"
 
-sudo service dnsmasq restart
+  sudo service dnsmasq restart
+}
 
-cp /vagrant/preseed.cfg "$TFTP_ROOT"
+configure_preseed() {
+  cp /vagrant/preseed.cfg "$TFTP_ROOT"
 
-if [ ! -r $TFTP_ROOT/pxelinux.cfg/default.original ]
-then
-  cp $TFTP_ROOT/pxelinux.cfg/default $TFTP_ROOT/pxelinux.cfg/default.original
-fi
+  if [ ! -r $TFTP_ROOT/pxelinux.cfg/default.original ]
+  then
+    cp $TFTP_ROOT/pxelinux.cfg/default $TFTP_ROOT/pxelinux.cfg/default.original
+  fi
 
-sudo sh -c "cat > $TFTP_ROOT/pxelinux.cfg/default << EOF
+  sudo sh -c "cat > $TFTP_ROOT/pxelinux.cfg/default << EOF
 default install
 label install
   kernel ubuntu-installer/amd64/linux
-  append vga=788 initrd=ubuntu-installer/amd64/initrd.gz auto=true priority=critical preseed/url=tftp://$IP_ADDRESS/preseed.cfg
+  append vga=788 initrd=ubuntu-installer/amd64/initrd.gz auto=true priority=critical preseed/file=preseed.cfg
 EOF"
+}
+
+main() {
+  download_netboot_image
+  setup_dnsmasq
+  configure_preseed
+}
+
+main
