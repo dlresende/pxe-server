@@ -5,6 +5,8 @@
 set -eu
 
 TFTP_ROOT=/tmp/tftp
+IP_ADDRESS=$(ifconfig | awk '/inet addr/{print substr($2,6)}' | grep 192.168)
+
 
 download_netboot_image() {
   local dist=xenial
@@ -29,9 +31,6 @@ setup_dnsmasq() {
     --assume-yes \
     dnsmasq \
 
-  local ip_address
-  ip_address=$(ifconfig | awk '/inet addr/{print substr($2,6)}' | grep 192.168)
-
   sudo sh -c "cat > /etc/dnsmasq.d/proxydhcp.conf << EOF
 # Set the boot filename for netboot/PXE. You will only need
 # this is you want to boot machines over the network and you will need
@@ -54,7 +53,7 @@ log-dhcp
 # This range(s) is for the public interface, where dnsmasq functions
 # as a proxy DHCP server providing boot information but no IP leases.
 # Any ip in the subnet will do, so you may just put your server NIC ip here.
-dhcp-range=$ip_address,proxy
+dhcp-range=$IP_ADDRESS,proxy
 EOF"
 
   sudo service dnsmasq restart
@@ -72,7 +71,7 @@ configure_preseed() {
 default install
 label install
   kernel ubuntu-installer/amd64/linux
-  append vga=788 initrd=ubuntu-installer/amd64/initrd.gz auto=true priority=critical preseed/file=preseed.cfg
+  append vga=788 initrd=ubuntu-installer/amd64/initrd.gz auto=true priority=critical preseed/url=tftp://$IP_ADDRESS/preseed.cfg
 EOF"
 }
 
